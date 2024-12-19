@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - monitoring
+      - "--url=${BETTER_STACK_URL}"
+      - "--interval=10"
+      - "--cpu-limit=90"
+      - "--memory-limit=80"
+      - "--disk-limit=85"
+    volumes:
+      - /:/host:ro
+    pid: host
+    privileged: true
+    restart: unless-stopped 
