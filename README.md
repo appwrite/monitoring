@@ -124,26 +124,8 @@ monitoring --url=https://betterstack.com/webhook/xyz
 ```
 
 ### Docker Development
-1. Build the image:
-```bash
-docker build -t monitoring .
 ```
-
-2. Run with Docker:
-```bash
-# Show help
-docker run --rm ghcr.io/appwrite/monitoring:latest monitoring --help
-
-# Run monitoring with custom parameters
-docker run -d \
-  --name monitoring \
-  --privileged \
-  --pid=host \
-  -v /:/host:ro \
-  ghcr.io/appwrite/monitoring:latest \
-  monitoring \
-  --url=https://betterstack.com/webhook/xyz \
-  --interval=60
+docker compose up -d
 ```
 
 ## License
