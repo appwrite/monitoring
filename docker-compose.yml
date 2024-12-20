@@ -1,16 +1,15 @@
-version: '3.8'
-
 services:
   monitoring:
     build:
       context: .
       dockerfile: Dockerfile
+    hostname: monitoring-local
     command:
       - monitoring
       - "--url=${BETTER_STACK_URL}"
-      - "--interval=10"
-      - "--cpu-limit=90"
-      - "--memory-limit=80"
+      - "--interval=5"
+      - "--cpu-limit=5"
+      - "--memory-limit=10"
       - "--disk-limit=85"
     volumes:
       - /:/host:ro
