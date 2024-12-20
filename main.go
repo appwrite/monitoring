@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -228,20 +227,9 @@ func (s *SystemMonitor) sendMetric(metric Metric) error {
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	// Log response details without colors
 	s.log.Log("Response Status: %s", resp.Status)
-	if len(respBody) > 0 {
-		s.log.Log("Response Body: %s", string(respBody))
-	}
-
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("request failed with status: %d, body: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("request failed with status: %d", resp.StatusCode)
 	}
 
 	return nil
