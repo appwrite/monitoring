@@ -1,6 +1,6 @@
 # System Monitoring
 
-A lightweight system monitoring tool that tracks CPU, memory, and disk usage across your infrastructure. When resource usage exceeds defined thresholds, it creates incidents in BetterStack (formerly BetterUptime).
+A lightweight system monitoring tool that tracks CPU, memory, and disk usage across your infrastructure. When resource usage exceeds defined thresholds, it creates incidents in BetterStack.
 
 ## Features
 
