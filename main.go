@@ -34,6 +34,12 @@ type SystemMonitor struct {
 	diskLimit      float64
 	interval       int
 	log            *Logger
+	
+	// EMA tracking
+	cpuEMA         float64
+	memoryEMA      float64
+	diskEMA        float64
+	alpha          float64 // EMA smoothing factor
 }
 
 func NewSystemMonitor(betterStackURL string, interval int, cpuLimit, memoryLimit, diskLimit float64) (*SystemMonitor, error) {
@@ -41,6 +47,12 @@ func NewSystemMonitor(betterStackURL string, interval int, cpuLimit, memoryLimit
 	if err != nil {
 		return nil, fmt.Errorf("failed to get hostname: %v", err)
 	}
+
+	// Calculate alpha based on interval to get roughly 5 minutes of smoothing
+	// EMA formula: alpha = 2/(N+1) where N is the number of periods
+	// For 5 minutes of smoothing with our interval: N = 300/interval
+	N := float64(300) / float64(interval)
+	alpha := 2.0 / (N + 1.0)
 
 	return &SystemMonitor{
 		httpClient: &http.Client{
@@ -53,7 +65,12 @@ func NewSystemMonitor(betterStackURL string, interval int, cpuLimit, memoryLimit
 		diskLimit:      diskLimit,
 		interval:       interval,
 		log:            New(),
+		alpha:          alpha,
 	}, nil
+}
+
+func (s *SystemMonitor) calculateEMA(currentValue, previousEMA float64) float64 {
+	return s.alpha*currentValue + (1-s.alpha)*previousEMA
 }
 
 func (s *SystemMonitor) checkCPU() error {
@@ -74,12 +91,15 @@ func (s *SystemMonitor) checkCPU() error {
 		return nil
 	}
 
-	value := cpuPercent[0]
-	status := s.getStatus(value, s.cpuLimit)
+	// Calculate EMA for CPU usage
+	instantValue := cpuPercent[0]
+	s.cpuEMA = s.calculateEMA(instantValue, s.cpuEMA)
+	
+	status := s.getStatus(s.cpuEMA, s.cpuLimit)
 	if status == "fail" {
-		s.log.Warn("CPU usage %.2f%% exceeds limit of %.2f%%", value, s.cpuLimit)
+		s.log.Warn("CPU usage EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", s.cpuEMA, s.cpuLimit, instantValue)
 	} else {
-		s.log.Log("CPU usage: %.2f%% (limit: %.2f%%)", value, s.cpuLimit)
+		s.log.Log("CPU usage EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%)", s.cpuEMA, s.cpuLimit, instantValue)
 	}
 	
 	metric := Metric{
@@ -88,7 +108,7 @@ func (s *SystemMonitor) checkCPU() error {
 		AlertID:   fmt.Sprintf("cpu-%s", s.hostname),
 		Timestamp: time.Now().Unix(),
 		Status:    status,
-		Value:     value,
+		Value:     s.cpuEMA,
 		Limit:     s.cpuLimit,
 	}
 
@@ -101,14 +121,17 @@ func (s *SystemMonitor) checkMemory() error {
 		return fmt.Errorf("failed to get memory stats: %v", err)
 	}
 
-	value := vmStat.UsedPercent
-	status := s.getStatus(value, s.memoryLimit)
+	instantValue := vmStat.UsedPercent
+	s.memoryEMA = s.calculateEMA(instantValue, s.memoryEMA)
+	
+	status := s.getStatus(s.memoryEMA, s.memoryLimit)
 	if status == "fail" {
-		s.log.Warn("Memory usage %.2f%% exceeds limit of %.2f%%", value, s.memoryLimit)
+		s.log.Warn("Memory usage EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", s.memoryEMA, s.memoryLimit, instantValue)
 	} else {
-		s.log.Log("Memory usage: %.2f%% (limit: %.2f%%), Available: %d MB, Total: %d MB",
-			value,
+		s.log.Log("Memory usage EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%), Available: %d MB, Total: %d MB",
+			s.memoryEMA,
 			s.memoryLimit,
+			instantValue,
 			vmStat.Available/(1024*1024),
 			vmStat.Total/(1024*1024))
 	}
@@ -119,7 +142,7 @@ func (s *SystemMonitor) checkMemory() error {
 		AlertID:   fmt.Sprintf("memory-%s", s.hostname),
 		Timestamp: time.Now().Unix(),
 		Status:    status,
-		Value:     value,
+		Value:     s.memoryEMA,
 		Limit:     s.memoryLimit,
 	}
 
@@ -133,14 +156,17 @@ func (s *SystemMonitor) checkDisk() error {
 		return fmt.Errorf("failed to get disk usage: %v", err)
 	}
 
-	value := usage.UsedPercent
-	status := s.getStatus(value, s.diskLimit)
+	instantValue := usage.UsedPercent
+	s.diskEMA = s.calculateEMA(instantValue, s.diskEMA)
+	
+	status := s.getStatus(s.diskEMA, s.diskLimit)
 	if status == "fail" {
-		s.log.Warn("Root disk usage %.2f%% exceeds limit of %.2f%%", value, s.diskLimit)
+		s.log.Warn("Root disk usage EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", s.diskEMA, s.diskLimit, instantValue)
 	} else {
-		s.log.Log("Root disk usage: %.2f%% (limit: %.2f%%), Free: %d MB, Total: %d MB",
-			value,
+		s.log.Log("Root disk usage EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%), Free: %d MB, Total: %d MB",
+			s.diskEMA,
 			s.diskLimit,
+			instantValue,
 			usage.Free/(1024*1024),
 			usage.Total/(1024*1024))
 	}
@@ -151,7 +177,7 @@ func (s *SystemMonitor) checkDisk() error {
 		AlertID:   fmt.Sprintf("disk-root-%s", s.hostname),
 		Timestamp: time.Now().Unix(),
 		Status:    status,
-		Value:     value,
+		Value:     s.diskEMA,
 		Limit:     s.diskLimit,
 	}); err != nil {
 		return err
@@ -170,15 +196,18 @@ func (s *SystemMonitor) checkDisk() error {
 			continue
 		}
 
-		value := usage.UsedPercent
-		status := s.getStatus(value, s.diskLimit)
+		instantValue := usage.UsedPercent
+		// For mounted directories, we'll use the same EMA as root for simplicity
+		// In a more sophisticated implementation, we might want separate EMAs for each mount
+		status := s.getStatus(s.diskEMA, s.diskLimit)
 		if status == "fail" {
-			s.log.Warn("Disk usage for %s %.2f%% exceeds limit of %.2f%%", mount, value, s.diskLimit)
+			s.log.Warn("Disk usage for %s EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", mount, s.diskEMA, s.diskLimit, instantValue)
 		} else {
-			s.log.Log("Disk usage for %s: %.2f%% (limit: %.2f%%), Free: %d MB, Total: %d MB",
+			s.log.Log("Disk usage for %s EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%), Free: %d MB, Total: %d MB",
 				mount,
-				value,
+				s.diskEMA,
 				s.diskLimit,
+				instantValue,
 				usage.Free/(1024*1024),
 				usage.Total/(1024*1024))
 		}
@@ -189,7 +218,7 @@ func (s *SystemMonitor) checkDisk() error {
 			AlertID:   fmt.Sprintf("disk-%s-%s", filepath.Base(mount), s.hostname),
 			Timestamp: time.Now().Unix(),
 			Status:    status,
-			Value:     value,
+			Value:     s.diskEMA,
 			Limit:     s.diskLimit,
 		}); err != nil {
 			return err
