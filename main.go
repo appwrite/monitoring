@@ -197,8 +197,6 @@ func (s *SystemMonitor) checkDisk() error {
 		}
 
 		instantValue := usage.UsedPercent
-		// For mounted directories, we'll use the same EMA as root for simplicity
-		// In a more sophisticated implementation, we might want separate EMAs for each mount
 		status := s.getStatus(s.diskEMA, s.diskLimit)
 		if status == "fail" {
 			s.log.Warn("Disk usage for %s EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", mount, s.diskEMA, s.diskLimit, instantValue)

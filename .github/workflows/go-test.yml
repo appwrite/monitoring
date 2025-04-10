@@ -34,32 +34,12 @@ jobs:
     - name: Run tests
       run: go test -v -coverprofile=coverage.out ./...
 
+    - name: Display coverage
+      run: go tool cover -func=coverage.out
+
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: coverage.out
-        if-no-files-found: error
-
-  coverage:
-    name: Coverage Analysis
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21'
-        check-latest: true
-
-    - name: Download coverage report
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-report
-
-    - name: Display coverage
-      run: |
-        go tool cover -func=coverage.out 
+        if-no-files-found: error 
