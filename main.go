@@ -38,7 +38,7 @@ type SystemMonitor struct {
 	// EMA tracking
 	cpuEMA         float64
 	memoryEMA      float64
-	diskEMA        float64
+	diskEMAs       map[string]float64 // Map to track EMAs for all disks (root and mounted)
 	alpha          float64 // EMA smoothing factor
 }
 
@@ -65,6 +65,7 @@ func NewSystemMonitor(betterStackURL string, interval int, cpuLimit, memoryLimit
 		diskLimit:      diskLimit,
 		interval:       interval,
 		log:            New(),
+		diskEMAs:       make(map[string]float64), // Initialize the map for all disk EMAs
 		alpha:          alpha,
 	}, nil
 }
@@ -151,20 +152,31 @@ func (s *SystemMonitor) checkMemory() error {
 
 func (s *SystemMonitor) checkDisk() error {
 	// Check root partition
-	usage, err := disk.Usage("/")
+	rootPath := "/"
+	usage, err := disk.Usage(rootPath)
 	if err != nil {
 		return fmt.Errorf("failed to get disk usage: %v", err)
 	}
 
 	instantValue := usage.UsedPercent
-	s.diskEMA = s.calculateEMA(instantValue, s.diskEMA)
 	
-	status := s.getStatus(s.diskEMA, s.diskLimit)
+	// Calculate or update EMA for root disk
+	if _, exists := s.diskEMAs[rootPath]; !exists {
+		// Initialize EMA with current value if this is first check
+		s.diskEMAs[rootPath] = instantValue
+	}
+	
+	// Update EMA for root disk
+	s.diskEMAs[rootPath] = s.calculateEMA(instantValue, s.diskEMAs[rootPath])
+	
+	rootEMA := s.diskEMAs[rootPath]
+	status := s.getStatus(rootEMA, s.diskLimit)
+	
 	if status == "fail" {
-		s.log.Warn("Root disk usage EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", s.diskEMA, s.diskLimit, instantValue)
+		s.log.Warn("Root disk usage EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", rootEMA, s.diskLimit, instantValue)
 	} else {
 		s.log.Log("Root disk usage EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%), Free: %d MB, Total: %d MB",
-			s.diskEMA,
+			rootEMA,
 			s.diskLimit,
 			instantValue,
 			usage.Free/(1024*1024),
@@ -177,7 +189,7 @@ func (s *SystemMonitor) checkDisk() error {
 		AlertID:   fmt.Sprintf("disk-root-%s", s.hostname),
 		Timestamp: time.Now().Unix(),
 		Status:    status,
-		Value:     s.diskEMA,
+		Value:     rootEMA,
 		Limit:     s.diskLimit,
 	}); err != nil {
 		return err
@@ -197,13 +209,25 @@ func (s *SystemMonitor) checkDisk() error {
 		}
 
 		instantValue := usage.UsedPercent
-		status := s.getStatus(s.diskEMA, s.diskLimit)
+		
+		// Calculate or update EMA for this mount
+		if _, exists := s.diskEMAs[mount]; !exists {
+			// Initialize EMA with current value if this is first check
+			s.diskEMAs[mount] = instantValue
+		}
+		
+		// Update EMA for this mount
+		s.diskEMAs[mount] = s.calculateEMA(instantValue, s.diskEMAs[mount])
+		
+		mountEMA := s.diskEMAs[mount]
+		status := s.getStatus(mountEMA, s.diskLimit)
+		
 		if status == "fail" {
-			s.log.Warn("Disk usage for %s EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", mount, s.diskEMA, s.diskLimit, instantValue)
+			s.log.Warn("Disk usage for %s EMA %.2f%% exceeds limit of %.2f%% (instant: %.2f%%)", mount, mountEMA, s.diskLimit, instantValue)
 		} else {
 			s.log.Log("Disk usage for %s EMA: %.2f%% (limit: %.2f%%, instant: %.2f%%), Free: %d MB, Total: %d MB",
 				mount,
-				s.diskEMA,
+				mountEMA,
 				s.diskLimit,
 				instantValue,
 				usage.Free/(1024*1024),
@@ -216,7 +240,7 @@ func (s *SystemMonitor) checkDisk() error {
 			AlertID:   fmt.Sprintf("disk-%s-%s", filepath.Base(mount), s.hostname),
 			Timestamp: time.Now().Unix(),
 			Status:    status,
-			Value:     s.diskEMA,
+			Value:     mountEMA,
 			Limit:     s.diskLimit,
 		}); err != nil {
 			return err

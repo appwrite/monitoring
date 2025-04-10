@@ -141,4 +141,112 @@ func TestEMADifferentIntervals(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDiskEMAs(t *testing.T) {
+	// Create a monitor with a 60-second interval
+	monitor, err := NewSystemMonitor("http://test.com", 60, 90.0, 90.0, 90.0)
+	if err != nil {
+		t.Fatalf("Failed to create monitor: %v", err)
+	}
+
+	// Test case 1: Verify root disk EMA updates correctly
+	t.Run("RootDiskEMA", func(t *testing.T) {
+		rootPath := "/"
+		
+		// Simulate initial usage
+		monitor.diskEMAs[rootPath] = 50.0
+		
+		// Simulate a series of measurements
+		values := []float64{60.0, 70.0, 80.0, 90.0}
+		for _, v := range values {
+			monitor.diskEMAs[rootPath] = monitor.calculateEMA(v, monitor.diskEMAs[rootPath])
+		}
+		
+		// EMA should be between 70% and 90%
+		if monitor.diskEMAs[rootPath] < 70.0 || monitor.diskEMAs[rootPath] > 90.0 {
+			t.Errorf("Expected root disk EMA to be between 70%% and 90%%, got %.2f%%", monitor.diskEMAs[rootPath])
+		}
+	})
+
+	// Test case 2: Verify multiple mount points are tracked independently
+	t.Run("MultipleMountEMAs", func(t *testing.T) {
+		// Setup test mounts with different starting values
+		mounts := map[string]float64{
+			"/mnt/data1": 30.0,
+			"/mnt/data2": 50.0,
+			"/mnt/logs":  70.0,
+		}
+		
+		// Initialize starting values
+		for path, value := range mounts {
+			monitor.diskEMAs[path] = value
+		}
+		
+		// Apply the same change to all mounts (+20%)
+		for path := range mounts {
+			currentValue := monitor.diskEMAs[path]
+			newValue := currentValue + 20.0
+			if newValue > 100.0 {
+				newValue = 100.0
+			}
+			monitor.diskEMAs[path] = monitor.calculateEMA(newValue, currentValue)
+		}
+		
+		// Verify each mount's EMA updated independently
+		for path, initialValue := range mounts {
+			expectedMinimum := initialValue
+			expectedMaximum := initialValue + 20.0 // Full change would be +20%
+			if expectedMaximum > 100.0 {
+				expectedMaximum = 100.0
+			}
+			
+			// With our alpha, the EMA should be approximately between the initial value and the initial + 7% (1/3 of 20%)
+			expectedMinimum = initialValue
+			expectedMaximum = initialValue + 7.0
+			
+			actualValue := monitor.diskEMAs[path]
+			if actualValue < expectedMinimum || actualValue > expectedMaximum {
+				t.Errorf("Mount %s: Expected EMA between %.2f%% and %.2f%%, got %.2f%%", 
+					path, expectedMinimum, expectedMaximum, actualValue)
+			}
+		}
+		
+		// Extract just the mount values we're testing
+		mountValues := make([]float64, 0, len(mounts))
+		for path := range mounts {
+			mountValues = append(mountValues, monitor.diskEMAs[path])
+		}
+		
+		// Verify mount points have different values (they're independent)
+		if len(unique(mountValues)) != len(mounts) {
+			t.Errorf("Expected all mount EMAs to be different, got: %v", mountValues)
+		}
+	})
+}
+
+// Helper functions for the disk EMA tests
+
+// Return values from a map as a slice
+func getValues(m map[string]float64) []float64 {
+	values := make([]float64, 0, len(m))
+	for _, v := range m {
+		values = append(values, v)
+	}
+	return values
+}
+
+// Return unique values from a slice
+func unique(values []float64) []float64 {
+	seen := make(map[float64]bool)
+	unique := make([]float64, 0)
+	
+	for _, v := range values {
+		if !seen[v] {
+			seen[v] = true
+			unique = append(unique, v)
+		}
+	}
+	
+	return unique
 } 
