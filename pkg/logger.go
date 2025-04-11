@@ -1,4 +1,4 @@
-package main
+package pkg
 
 import (
 	"fmt"
@@ -21,7 +21,7 @@ type Logger struct {
 	logger *log.Logger
 }
 
-func New() *Logger {
+func NewLogger() *Logger {
 	return &Logger{
 		logger: log.New(os.Stdout, "", 0),
 	}

@@ -1,133 +1,71 @@
-# System Monitoring
+# Appwrite System Monitoring
 
-A lightweight system monitoring tool that tracks CPU, memory, and disk usage across your infrastructure. When resource usage exceeds defined thresholds, it creates incidents in BetterStack.
+A system monitoring tool for Appwrite servers that tracks CPU, memory, and disk usage with alerting via BetterStack.
 
 ## Features
 
-- CPU usage monitoring
-- Memory usage monitoring
-- Disk usage monitoring (root and mounted volumes)
-- Automatic incident creation and resolution
-- Configurable thresholds via CLI
-- Docker-based deployment
+- Monitors CPU usage with configurable thresholds
+- Monitors memory usage with configurable thresholds
+- Monitors disk usage (root and mounted volumes) with configurable thresholds
+- Uses Exponential Moving Average (EMA) to smooth out short-term spikes
+- Sends alerts to BetterStack when thresholds are exceeded
 
-## Command Line Usage
+## Project Structure
 
-The monitoring tool is configured through command-line flags:
+The project follows a simplified package structure:
 
-```bash
-monitoring [flags]
-
-Flags:
-  -url string
-        BetterStack webhook URL (required)
-  -interval int
-        Check interval in seconds (default: 300)
-  -cpu-limit float
-        CPU usage threshold percentage (default: 90)
-  -memory-limit float
-        Memory usage threshold percentage (default: 90)
-  -disk-limit float
-        Disk usage threshold percentage (default: 85)
-  -help
-        Display help information
+```
+monitoring/
+├── main.go            # Entry point with CLI argument parsing
+├── pkg/
+│   ├── logger.go      # Logging functionality at package level
+│   └── monitor/       # Core monitoring functionality
+│       ├── monitor.go # Main monitoring struct and Metric model
+│       ├── cpu.go     # CPU-specific monitoring
+│       ├── memory.go  # Memory-specific monitoring
+│       └── disk.go    # Disk-specific monitoring
+├── go.mod             # Go module definition
+└── README.md          # Documentation
 ```
 
-### Examples
+## Usage
+
+### Building
 
 ```bash
-# Basic usage with required URL
-monitoring --url=https://betterstack.com/webhook/xyz
-
-# Custom thresholds
-monitoring --url=https://betterstack.com/webhook/xyz \
-          --cpu-limit=95 \
-          --memory-limit=85 \
-          --disk-limit=80
-
-# More frequent checks (every minute)
-monitoring --url=https://betterstack.com/webhook/xyz --interval=60
-```
-
-## Docker Deployment
-
-### Using Docker Run
-
-```bash
-docker run -d \
-  --name monitoring \
-  --privileged \
-  --pid=host \
-  -v /:/host:ro \
-  ghcr.io/appwrite/monitoring:latest \
-  monitoring \
-  --url=https://betterstack.com/webhook/xyz \
-  --interval=300 \
-  --cpu-limit=90 \
-  --memory-limit=90 \
-  --disk-limit=85
-```
-
-### Using Docker Compose
-
-The docker-compose.yml file is configured with default parameters that you can modify as needed:
-
-```bash
-docker-compose up -d
-```
-
-To modify the parameters, edit the command section in docker-compose.yml:
-```yaml
-command:
-  - monitoring
-  - "--url=https://betterstack.com/webhook/xyz"
-  - "--interval=10"
-  - "--cpu-limit=90"
-  - "--memory-limit=80"
-  - "--disk-limit=85"
-```
-
-## Building from Source
-
-1. Clone the repository:
-```bash
+# Clone the repository
 git clone https://github.com/appwrite/monitoring.git
 cd monitoring
+
+# Build the binary
+go build -o appwrite-monitor main.go
 ```
 
-2. Build the binary:
+### Running
+
 ```bash
-go build -o monitoring
+# Basic usage
+./appwrite-monitor --url="https://betterstack-webhook-url"
+
+# With custom thresholds
+./appwrite-monitor \
+  --url="https://betterstack-webhook-url" \
+  --interval=60 \
+  --cpu-limit=80 \
+  --memory-limit=85 \
+  --disk-limit=90
 ```
 
-3. Run the monitoring tool:
-```bash
-monitoring --url=https://betterstack.com/webhook/xyz
-```
+### Command Line Options
 
-## Development
+- `--url`: BetterStack webhook URL (required)
+- `--interval`: Check interval in seconds (default: 300)
+- `--cpu-limit`: CPU usage threshold percentage (default: 90)
+- `--memory-limit`: Memory usage threshold percentage (default: 90)
+- `--disk-limit`: Disk usage threshold percentage (default: 85)
 
-### Requirements
-- Go 1.21 or later
-- Docker and Docker Compose (for containerized deployment)
+## How It Works
 
-### Local Development
-1. Install dependencies:
-```bash
-go mod download
-```
+The monitoring tool uses Exponential Moving Average (EMA) to track resource usage over time, which helps prevent false alerts from momentary spikes. When the EMA of a resource exceeds the configured threshold, an alert is sent to BetterStack.
 
-2. Build and run:
-```bash
-go build -o monitoring
-monitoring --url=https://betterstack.com/webhook/xyz
-```
-
-### Docker Development
-```
-docker compose up -d
-```
-
-## License
-
-MIT License - see the [LICENSE](LICENSE) file for details
+The EMA smoothing factor is automatically calculated based on the check interval to provide roughly 5 minutes of smoothing. This means that sudden spikes will have less impact on the reported values, while sustained high usage will still trigger alerts.
