@@ -2,7 +2,7 @@ module github.com/appwrite/monitoring
 
 go 1.19
 
-require github.com/shirou/gopsutil/v3 v3.24.1
+require github.com/shirou/gopsutil/v3 v3.24.5
 
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -11,6 +11,6 @@ require (
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	github.com/yusufpapurcu/wmi v1.2.3 // indirect
-	golang.org/x/sys v0.16.0 // indirect
+	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	golang.org/x/sys v0.20.0 // indirect
 )
